@@ -43,9 +43,39 @@ fn bench_insert_at_end(c: &mut Criterion) {
     g.finish();
 }
 
+// Single-character appends to a text, each in its own transaction, with an update observer, as a
+// provider has. The appends squash into one item, and each update holds only its newest character.
+fn bench_append_with_update_observer(c: &mut Criterion) {
+    let mut g = c.benchmark_group("text_utf16/append_with_update_observer");
+    g.sample_size(10);
+    for appends in [10_000usize, 50_000] {
+        for (name, ch) in [("ascii", "x"), ("non_ascii", "é")] {
+            g.bench_function(BenchmarkId::new(name, appends), |b| {
+                b.iter(|| {
+                    let doc = Doc::with_options(Options {
+                        offset_kind: OffsetKind::Utf16,
+                        ..Options::default()
+                    });
+                    doc.observe_update_v1("bench", |_, e| {
+                        black_box(e.update.len());
+                    })
+                    .unwrap();
+                    let text = doc.get_or_insert_text("text");
+                    for _ in 0..appends {
+                        let mut txn = doc.transact_mut();
+                        let end = text.len(&txn);
+                        text.insert(&mut txn, end, ch);
+                    }
+                });
+            });
+        }
+    }
+    g.finish();
+}
+
 criterion_group! {
     name = text_utf16_benches;
     config = Criterion::default();
-    targets = bench_insert_at_end,
+    targets = bench_insert_at_end, bench_append_with_update_observer,
 }
 criterion_main!(text_utf16_benches);
