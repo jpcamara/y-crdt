@@ -43,8 +43,9 @@ fn bench_insert_at_end(c: &mut Criterion) {
     g.finish();
 }
 
-// Single-character appends to a text, each in its own transaction, with an update observer, as a
-// provider has. The appends squash into one item, and each update holds only its newest character.
+// Single-character appends to a text, each in its own transaction, with an update observer (as
+// sync providers use). The appends are squashed into one item, and each update holds only the
+// newest character.
 fn bench_append_with_update_observer(c: &mut Criterion) {
     let mut g = c.benchmark_group("text_utf16/append_with_update_observer");
     g.sample_size(10);

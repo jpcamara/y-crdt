@@ -2942,6 +2942,48 @@ mod test {
     }
 
     #[test]
+    fn utf16_encode_end_of_squashed_item() {
+        // appends typed one transaction at a time are squashed into one item, and each update
+        // holds only the newest characters: a slice that runs to the end of the item's string
+        let d1 = utf16_doc(ClientID::new(1));
+        let d2 = utf16_doc(ClientID::new(2));
+        let t1 = d1.get_or_insert_text("text");
+        let t2 = d2.get_or_insert_text("text");
+        let updates = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = updates.clone();
+        d1.observe_update_v1("sub", move |_, e| {
+            sink.lock().unwrap().push(e.update.clone())
+        })
+        .unwrap();
+        for _ in 0..10 {
+            let mut txn = d1.transact_mut();
+            let end = t1.len(&txn);
+            t1.insert(&mut txn, end, "aé😀");
+        }
+        assert_eq!(t1.0.start.unwrap().len(), 40); // squashed into one item
+        for u in updates.lock().unwrap().drain(..) {
+            d2.transact_mut()
+                .apply_update(Update::decode_v1(&u).unwrap())
+                .unwrap();
+        }
+        assert_eq!(t2.get_string(&d2.transact()), "aé😀".repeat(10));
+
+        // a state vector that ends inside a surrogate pair: the rest starts with U+FFFD, as in Yjs
+        let mut sv = StateVector::default();
+        sv.set_max(ClientID::new(1), 3);
+        let u = d1.transact().encode_state_as_update_v1(&sv);
+        let u = Update::decode_v1(&u).unwrap();
+        let mut blocks = crate::test_utils::Blocks::new(&u.blocks);
+        let item = blocks.next().unwrap().as_item().unwrap();
+        match &item.content {
+            ItemContent::String(s) => {
+                assert_eq!(s.as_str(), format!("\u{FFFD}{}", "aé😀".repeat(9)))
+            }
+            c => panic!("unexpected content: {:?}", c),
+        }
+    }
+
+    #[test]
     fn utf16_split_surrogate_pair() {
         // a=0, 😀=1..3 (surrogate pair), b=3; len = 4
         // expected results match Yjs: broken halves of a pair become U+FFFD

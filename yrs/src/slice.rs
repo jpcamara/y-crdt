@@ -236,10 +236,9 @@ impl ItemSlice {
             }
         }
         match &item.content {
-            // A slice that runs to the end of a string is read from that end, so encoding the
-            // newest characters of a long string doesn't walk the whole string. `item.len` is
-            // the string's length in UTF-16 code units.
-            ItemContent::String(s) if self.start != 0 && self.end + 1 == item.len => {
+            // read a slice that runs to the end of a string from that end, so that encoding the
+            // newest characters of a long string doesn't walk it from the start
+            ItemContent::String(s) if !self.adjacent_left() && self.adjacent_right() => {
                 encoder.write_string(&utf16_suffix(s, self.len() as usize))
             }
             content => content.encode_slice(encoder, self.start, self.end),

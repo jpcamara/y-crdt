@@ -1722,9 +1722,11 @@ pub(crate) fn split_str(
     (Cow::Borrowed(left), Cow::Borrowed(right))
 }
 
-/// Returns the last `len` UTF-16 code units of `str`, walking back from its end, so it costs
-/// only as much as it returns. It's equivalent to the right part of [split_str] at the string's
-/// UTF-16 length minus `len`, including when that falls in the middle of a surrogate pair.
+/// Returns the last `len` UTF-16 code units of `str`, found by walking back from its end.
+///
+/// Equivalent to the right part of [split_str] at the UTF-16 length of `str` minus `len`. When
+/// that offset falls in between the two halves of a surrogate pair, the remaining half is
+/// replaced with U+FFFD, just like [split_str] does.
 pub(crate) fn utf16_suffix(str: &str, len: usize) -> Cow<'_, str> {
     let mut remaining = len;
     let mut off = str.len();
