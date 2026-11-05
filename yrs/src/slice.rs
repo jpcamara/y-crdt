@@ -1,5 +1,6 @@
 use crate::block::{
-    BlockRange, ItemPtr, BLOCK_GC_REF_NUMBER, BLOCK_SKIP_REF_NUMBER, HAS_ORIGIN, HAS_RIGHT_ORIGIN,
+    utf16_suffix, BlockRange, ItemContent, ItemPtr, BLOCK_GC_REF_NUMBER, BLOCK_SKIP_REF_NUMBER,
+    HAS_ORIGIN, HAS_RIGHT_ORIGIN,
 };
 use crate::types::TypePtr;
 use crate::updates::encoder::Encoder;
@@ -234,7 +235,14 @@ impl ItemSlice {
                 encoder.write_string(parent_sub.as_ref());
             }
         }
-        item.content.encode_slice(encoder, self.start, self.end);
+        match &item.content {
+            // read a slice that runs to the end of a string from that end, so that encoding the
+            // newest characters of a long string doesn't walk it from the start
+            ItemContent::String(s) if !self.adjacent_left() && self.adjacent_right() => {
+                encoder.write_string(&utf16_suffix(s, self.len() as usize))
+            }
+            content => content.encode_slice(encoder, self.start, self.end),
+        }
     }
 
     /// Returns a [ItemSlice] wrapper for a [Item] identified as a right neighbor of this slice.

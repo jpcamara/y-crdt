@@ -1722,6 +1722,30 @@ pub(crate) fn split_str(
     (Cow::Borrowed(left), Cow::Borrowed(right))
 }
 
+/// Returns the last `len` UTF-16 code units of `str`, found by walking back from its end.
+///
+/// Equivalent to the right part of [split_str] at the UTF-16 length of `str` minus `len`. When
+/// that offset falls in between the two halves of a surrogate pair, the remaining half is
+/// replaced with U+FFFD, just like [split_str] does.
+pub(crate) fn utf16_suffix(str: &str, len: usize) -> Cow<'_, str> {
+    let mut remaining = len;
+    let mut off = str.len();
+    for c in str.chars().rev() {
+        if remaining == 0 {
+            break;
+        }
+        let utf16_len = c.len_utf16();
+        if utf16_len > remaining {
+            // the suffix starts in the middle of a surrogate pair
+            let (_, right) = split_surrogate(str, off - c.len_utf8(), c);
+            return right;
+        }
+        off -= c.len_utf8();
+        remaining -= utf16_len;
+    }
+    Cow::Borrowed(&str[off..])
+}
+
 #[inline(never)]
 fn split_surrogate(str: &str, off: usize, c: char) -> (Cow<'_, str>, Cow<'_, str>) {
     const REPLACEMENT: char = '\u{FFFD}';
@@ -2441,7 +2465,7 @@ impl std::fmt::Display for ItemPtr {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{split_str, SplittableString};
+    use crate::block::{split_str, utf16_suffix, SplittableString};
     use crate::doc::OffsetKind;
     use std::ops::Deref;
 
@@ -2483,5 +2507,21 @@ mod test {
         let (a, b) = split_str(&s, 18, OffsetKind::Utf16);
         assert_eq!(a, "Zażółć gęślą jaźń\u{FFFD}");
         assert_eq!(b, "\u{FFFD}ありがとうございます");
+    }
+
+    #[test]
+    fn utf16_suffix_matches_split_str() {
+        for s in [
+            "",
+            "plain",
+            "Zażółć gęślą jaźń😀ありがとうございます",
+            "😀😀a😀",
+        ] {
+            let len = s.encode_utf16().count();
+            for offset in 0..=len {
+                let (_, right) = split_str(s, offset, OffsetKind::Utf16);
+                assert_eq!(utf16_suffix(s, len - offset), right, "{s:?} at {offset}");
+            }
+        }
     }
 }
